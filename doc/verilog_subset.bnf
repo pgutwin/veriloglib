@@ -1,0 +1,70 @@
+; Verilog subset BNF supported by this parser
+; Non-terminals are in angle brackets. Curly braces {} mean repetition (0+). Square brackets [] mean optional.
+; This BNF mirrors the PEGTL grammar implemented in include/verilog_grammar.hpp.
+
+<source>             ::= { <module> }
+
+<module>             ::= "module" <identifier> "(" [ <port_list> ] ")" ";" { <module_item> } "endmodule"
+
+<port_list>          ::= <identifier> { "," <identifier> }
+
+<module_item>        ::= <declaration> ";"
+                       | <continuous_assign>
+                       | <module_instantiation>
+
+<declaration>        ::= "input"  [ <range> ] <id_list>
+                       | "output" [ <range> ] <id_list>
+                       | "inout"  [ <range> ] <id_list>
+                       | "wire"   [ <range> ] <id_list>
+
+<id_list>            ::= <identifier> { "," <identifier> }
+
+<range>              ::= "[" <number> ":" <number> "]"
+
+<continuous_assign>  ::= "assign" <assignment_list> ";"
+
+<assignment_list>    ::= <assignment> { "," <assignment> }
+
+<assignment>         ::= <expression> "=" <expression>
+; NOTE: In practice, LHS is expected to be identifier/index/slice; numeric RHS is not supported.
+
+<module_instantiation> ::= <identifier> <instance_list> ";"
+
+<instance_list>      ::= <module_instance> { "," <module_instance> }
+
+<module_instance>    ::= <identifier> "(" [ <list_of_module_connections> ] ")"
+
+<list_of_module_connections> ::= <named_port_connection> { "," <named_port_connection> }
+                               | <module_port_connection> { "," <module_port_connection> }
+
+<named_port_connection> ::= "." <identifier> "(" <expression> ")"
+<module_port_connection>::= <expression>
+
+<expression>         ::= <identifier>
+                       | <identifier> "[" <number> "]"
+                       | <identifier> "[" <number> ":" <number> "]"
+                       | "{" <expression_list> "}"
+
+<expression_list>    ::= <expression> { "," <expression> }
+
+<identifier>         ::= <ident_norm> | <ident_esc>
+<ident_norm>         ::= <letter> { <letter_or_digit_or_$_> }
+<ident_esc>          ::= "\" <esc_seq>
+<esc_seq>            ::= <esc_char> { <esc_char> }
+<esc_char>           ::= ? any char except whitespace and one of []{}().,;=?
+
+<number>             ::= <unsigned_hex_str>
+                       | <signed_hex_str>
+                       | <size_and_base_digits>
+                       | <base_and_digits>
+
+<unsigned_hex_str>   ::= <hexdig> { <hexdig> }
+<signed_hex_str>     ::= ("+"|"-") <unsigned_hex_str>
+<size_and_base_digits>::= <unsigned_hex_str> "'" <base_char> <unsigned_hex_str>
+<base_and_digits>    ::= "'" <base_char> <unsigned_hex_str>
+<base_char>          ::= "b"|"B"|"o"|"O"|"d"|"D"|"h"|"H"
+<hexdig>             ::= "0"|"1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9"
+                       | "a"|"b"|"c"|"d"|"e"|"f"|"A"|"B"|"C"|"D"|"E"|"F"
+
+<letter>             ::= "A".."Z" | "a".."z" | "_"
+<letter_or_digit_or_$_> ::= <letter> | "0".."9" | "$"
