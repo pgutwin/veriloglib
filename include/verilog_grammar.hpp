@@ -51,7 +51,7 @@ struct primary_expr : sor< concat, ident_sliced, ident_indexed, identifier > {};
 struct expression : primary_expr {};
 struct concat_list : list_must< expression, seq< sep, comma, sep > > {};
 
-// Ports
+// Ports in header
 struct port_list : list< identifier, seq< sep, comma, sep > > {};
 
 // Keywords
@@ -79,9 +79,13 @@ struct continuous_assign : if_must< kw_assign, seps, assignment_list, sep, semi 
 
 // instantiation
 struct module_port_connection : expression {};
-struct named_port_connection : if_must< dot, identifier, sep, lparen, sep, expression, sep, rparen > {};
+// capture the named port name BEFORE parsing the expression
+struct named_port_name : identifier {};
+struct named_port_connection : if_must< dot, named_port_name, sep, lparen, sep, expression, sep, rparen > {};
 struct list_of_module_connections : list_must< sor< named_port_connection, module_port_connection >, seq< sep, comma, sep > > {};
-struct module_instance : if_must< identifier, sep, lparen, sep, opt< list_of_module_connections >, sep, rparen > {};
+// split instance name out so actions can grab it before ports overwrite last_identifier
+struct instance_name_tok : identifier {};
+struct module_instance : if_must< instance_name_tok, sep, lparen, sep, opt< list_of_module_connections >, sep, rparen > {};
 struct module_instance_list : list_must< module_instance, seq< sep, comma, sep > > {};
 struct module_inst_head : identifier {};
 struct module_instantiation : if_must< not_keyword, module_inst_head, seps, module_instance_list, sep, semi > {};

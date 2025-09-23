@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [n/a] 22 September 2025
 
+### Fixed
+- Extended testing showed that the port naming in instances was buggered up.
+  - Took quite a while to sort out the actions problem.
+
+## [n/a] 22 September 2025
+
 ### Added
 - Initial version
 

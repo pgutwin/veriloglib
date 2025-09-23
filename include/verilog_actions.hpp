@@ -35,6 +35,9 @@ struct State {
   std::vector<ContinuousAssign> assign_accum;
 
   std::string current_inst_module_name;
+  // temp for named connection key while parsing ".name(expr)"
+  std::string temp_named_port;
+
   struct PendingInstance {
     std::string instance_name;
     std::vector<Expr> ports_pos;
@@ -155,17 +158,59 @@ template<> struct action<verilog::grammar::continuous_assign> {
   }
 };
 
-// ---------- instantiation ----------
+// ---------------- instantiation ----------------
 template<> struct action<verilog::grammar::module_inst_head> {
   template<typename Input>
-  static void apply(const Input&, State& st) { st.current_inst_module_name = st.last_identifier; }
+  static void apply(const Input& in, State& st) {
+    std::string id = in.string();
+    if (!id.empty() && id[0]=='\\') id = id.substr(1);
+    st.current_inst_module_name = std::move(id);
+  }
 };
-template<> struct action<verilog::grammar::module_instance> {
+// capture instance name before port list parsing
+// template<> struct action<verilog::grammar::instance_name_tok> {
+//   template<typename Input>
+//   static void apply(const Input&, State& st) {
+//     State::PendingInstance pi;
+//     pi.instance_name = st.last_identifier;
+//     st.pending_instances.emplace_back(std::move(pi));
+//   }
+// };
+template<> struct action<verilog::grammar::instance_name_tok> {
+  template<typename Input>
+  static void apply(const Input& in, State& st) {
+    State::PendingInstance pi;
+    std::string id = in.string();
+    if (!id.empty() && id[0] == '\\') id = id.substr(1);
+    pi.instance_name = std::move(id);
+    st.pending_instances.emplace_back(std::move(pi));
+  }
+};
+// positional connection: stash identifier as Expr (subset: identifiers only)
+template<> struct action<verilog::grammar::module_port_connection> {
   template<typename Input>
   static void apply(const Input&, State& st) {
-    State::PendingInstance pi;
-    pi.instance_name = st.last_identifier;
-    st.pending_instances.emplace_back(std::move(pi));
+    if (st.pending_instances.empty()) return;
+    st.pending_instances.back().ports_pos.emplace_back( Identifier{ st.last_identifier } );
+  }
+};
+// named connection: remember ".name" then store expr afterwards
+template<> struct action<verilog::grammar::named_port_name> {
+  template<typename Input>
+  static void apply(const Input& in, State& st) {
+    st.temp_named_port = in.string();
+    if (!st.temp_named_port.empty() && st.temp_named_port[0]=='\\')
+      st.temp_named_port = st.temp_named_port.substr(1);
+  }
+};
+template<> struct action<verilog::grammar::named_port_connection> {
+  template<typename Input>
+  static void apply(const Input&, State& st) {
+    if (st.pending_instances.empty()) return;
+    if (!st.temp_named_port.empty()) {
+      st.pending_instances.back().ports_named.emplace(st.temp_named_port, Identifier{ st.last_identifier });
+    }
+    st.temp_named_port.clear();
   }
 };
 
@@ -202,7 +247,14 @@ template<> struct action<verilog::grammar::module_item> {
     if (!st.inout_decl_accum.empty()){ st.current_module.inout_declarations.insert(st.current_module.inout_declarations.end(), st.inout_decl_accum.begin(), st.inout_decl_accum.end()); st.inout_decl_accum.clear(); }
     if (!st.assign_accum.empty())   { st.current_module.assignments.insert(st.current_module.assignments.end(), st.assign_accum.begin(), st.assign_accum.end()); st.assign_accum.clear(); }
     if (!st.pending_instances.empty()) {
-      for (auto& pi : st.pending_instances) { ModuleInstance mi; mi.module_name = st.current_inst_module_name; mi.instance_name = pi.instance_name; st.current_module.module_instances.emplace_back(std::move(mi)); }
+      for (auto& pi : st.pending_instances) {
+        ModuleInstance mi;
+        mi.module_name  = st.current_inst_module_name;
+        mi.instance_name= pi.instance_name;
+        mi.ports_pos    = std::move(pi.ports_pos);
+        mi.ports_named  = std::move(pi.ports_named);
+        st.current_module.module_instances.emplace_back(std::move(mi));
+      }
       st.pending_instances.clear();
     }
   }
