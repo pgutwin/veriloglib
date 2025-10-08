@@ -11,13 +11,17 @@ struct block_comment1 : if_must< string<'/','*'>, until< string<'*','/'> > > {};
 struct block_comment2 : if_must< string<'(','*'>, until< string<'*',')'> > > {};
 struct sep  : star< sor< space, line_comment, block_comment1, block_comment2 > > {};
 struct seps : plus< sor< space, line_comment, block_comment1, block_comment2 > > {};
+template<char C>
+struct sym : tao::pegtl::seq< sep, tao::pegtl::one<C>, sep > {};
 
 // Identifiers
 struct ident_start : sor< alpha, one<'_'> > {};
 struct ident_more  : sor< alnum, one<'_','$'> > {};
 struct ident_norm  : seq< ident_start, star< ident_more > > {};
 struct ident_esc   : seq< one<'\\'>, plus< not_one<' ','\t','\r','\n','[',']','{','}','(',')','.',',',';','='> > > {};
-struct identifier  : sor< ident_esc, ident_norm > {};
+struct header_port_ident : identifier {};
+
+    
 
 // Numbers
 struct HEXDIG : ranges<'0','9','a','f','A','F'> {};
@@ -34,28 +38,50 @@ struct number_1 : sor<
 > {};
 
 // Ranges
-struct lbrack : one<'['> {}; struct rbrack : one<']'> {}; struct colon : one<':'> {};
-struct range_core : if_must< lbrack, number_1, colon, number_1, rbrack > {};
+struct lbrack : sym<'['> {}; struct rbrack : sym<']'> {}; struct colon : sym<':'> {};
+// --- allow [idx] and [msb:lsb] after identifiers ---
+
+// If expression is defined later in the file, leave this forward declare:
+struct expression;
+
+struct identifier_raw : tao::pegtl::sor< ident_esc, ident_norm > {};
+// --- identifier selects: allow [idx] and [msb:lsb] in expressions ---
+struct bit_select      : tao::pegtl::seq< lbrack, number_1, rbrack > {};
+struct range_slice     : tao::pegtl::seq< lbrack, number_1, sep, colon, sep, number_1, rbrack > {};
+struct range_or_select : tao::pegtl::sor< range_slice, bit_select > {};
+
+
+// zero-or-more selects lets you do foo[3], foo[7:0], foo[i][j], etc.
+struct identifier : tao::pegtl::seq< identifier_raw, tao::pegtl::star< range_or_select > > {};
 
 // Expr (subset)
-struct lbrace : one<'{'> {}; struct rbrace : one<'}'> {};
-struct lparen : one<'('> {}; struct rparen : one<')'> {};
-struct dot    : one<'.'> {}; struct comma  : one<','> {};
-struct semi   : one<';'> {}; struct equal  : one<'='> {};
+struct lbrace : sym<'{'> {}; struct rbrace : sym<'}'> {};
+struct lparen : sym<'('> {}; struct rparen : sym<')'> {};
+struct dot    : sym<'.'> {}; struct comma  : sym<','> {};
+struct semi   : sym<';'> {}; struct equal  : sym<'='> {};
 struct expression;
-struct ident_indexed : seq< identifier, sep, lbrack, sep, number_1, sep, rbrack > {};
-struct ident_sliced  : seq< identifier, sep, range_core > {};
 struct concat_list;
 struct concat : seq< lbrace, sep, concat_list, sep, rbrace > {};
-struct primary_expr : sor< concat, ident_sliced, ident_indexed, identifier > {};
+// identifier already supports zero-or-more selects: foo[3], foo[7:0], foo[i][j]
+struct primary_expr : sor< concat, identifier > {};
 struct expression : primary_expr {};
 struct concat_list : list_must< expression, seq< sep, comma, sep > > {};
 
 // Ports in header
-struct port_list : list< identifier, seq< sep, comma, sep > > {};
+// struct port_list : list< identifier, seq< sep, comma, sep > > {};
+struct port_list : tao::pegtl::list< header_port_ident, tao::pegtl::seq< sep, comma, sep > > {};
 
 // Keywords
 struct kw_wire   : TAO_PEGTL_STRING("wire") {};
+// ===== Declarations: width BEFORE name (e.g. "output [7:0] bus, a;") =====
+struct range_decl     : tao::pegtl::seq< lbrack, number_1, sep, colon, sep, number_1, rbrack > {};
+struct opt_range_decl : tao::pegtl::opt< tao::pegtl::seq< sep, range_decl, sep > > {};
+struct variable_name  : identifier_raw {};  // NOTE: raw, no post-selects
+struct list_of_variables
+  : tao::pegtl::seq<
+      opt_range_decl,
+      tao::pegtl::list_must< variable_name, tao::pegtl::seq< sep, comma, sep > >
+    > {};
 struct kw_input  : TAO_PEGTL_STRING("input") {};
 struct kw_output : TAO_PEGTL_STRING("output") {};
 struct kw_inout  : TAO_PEGTL_STRING("inout") {};
@@ -64,13 +90,11 @@ struct kw_module : TAO_PEGTL_STRING("module") {};
 struct kw_endmodule : TAO_PEGTL_STRING("endmodule") {};
 struct not_keyword : not_at< sor< kw_wire, kw_input, kw_output, kw_inout, kw_assign, kw_module, kw_endmodule > > {};
 
-struct list_of_variables : list_must< identifier, seq< sep, comma, sep > > {};
-struct opt_range : opt< seq< sep, range_core, sep > > {};
-
-struct net_declaration    : if_must< kw_wire,   seps, opt_range, list_of_variables, sep, semi > {};
-struct input_declaration  : if_must< kw_input,  seps, opt_range, list_of_variables, sep, semi > {};
-struct output_declaration : if_must< kw_output, seps, opt_range, list_of_variables, sep, semi > {};
-struct inout_declaration  : if_must< kw_inout,  seps, opt_range, list_of_variables, sep, semi > {};
+// One or more names, separated by commas.
+struct net_declaration    : if_must< kw_wire,   seps, list_of_variables, sep, semi > {};
+struct input_declaration  : if_must< kw_input,  seps, list_of_variables, sep, semi > {};
+struct output_declaration : if_must< kw_output, seps, list_of_variables, sep, semi > {};
+struct inout_declaration  : if_must< kw_inout,  seps, list_of_variables, sep, semi > {};
 
 // assign
 struct assignment : if_must< expression, sep, equal, sep, expression > {};

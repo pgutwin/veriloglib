@@ -50,7 +50,13 @@ std::string expr_to_string(const Expr& e) {
   struct V {
     std::string operator()(const Identifier& x) const { return x.name; }
     std::string operator()(const IdentifierIndexed& x) const { return x.name + "[" + std::to_string(x.index.as_integer()) + "]"; }
-    std::string operator()(const IdentifierSliced& x) const { return x.name + "[..]"; }
+    // std::string operator()(const IdentifierSliced& x) const { return x.name + "[..]"; }
+    std::string operator()(const IdentifierSliced& x) const {
+      // Render explicit msb:lsb to faithfully represent the slice.
+      return x.name + "[" +
+             std::to_string(x.range.start.as_integer()) + ":" +
+             std::to_string(x.range.end.as_integer()) + "]";
+    }
     std::string operator()(const std::shared_ptr<Concatenation>& x) const {
       std::string s = "{"; bool first=true;
       for (auto& el : x->elements) { if (!first) s += ", "; first=false; s += expr_to_string(el); }

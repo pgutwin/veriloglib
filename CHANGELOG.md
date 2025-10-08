@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [n/a] 8 October 2025
+
+### Fixed
+- Net name slicing was broken - at least now it's fixed in the testing but need to continue to investigate
+
 ## [n/a] 22 September 2025
 
 ### Fixed
